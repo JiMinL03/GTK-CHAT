@@ -31,14 +31,8 @@ void send_message(GtkButton *button, Widgets *w) {
 
     // Clear the message input field
     gtk_entry_set_text(GTK_ENTRY(w->entry_message), "");
-
-    // Append chat content to TextView (only display sent message locally)
-    GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(w->textview));
-    GtkTextIter iter;
-    gtk_text_buffer_get_end_iter(buffer, &iter);
-    gtk_text_buffer_insert(buffer, &iter, msg, -1);
-    gtk_text_buffer_insert(buffer, &iter, "\n", -1);
 }
+
 
 void select_file(GtkButton *button, Widgets *w) {
     GtkWidget *dialog;
