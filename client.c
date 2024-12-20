@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
 
 #define PORT 3334
 #define BUF_SIZE 1024
@@ -33,13 +34,39 @@ void send_message(GtkButton *button, Widgets *w) {
     gtk_entry_set_text(GTK_ENTRY(w->entry_message), "");
 }
 
+// 파일을 전송하는 함수
+void send_file(const char *filename, int sock) {
+    int file = open(filename, O_RDONLY);
+    if (file == -1) {
+        perror("파일 열기 실패");
+        return;
+    }
 
+    // 파일 크기 구하기
+    off_t file_size = lseek(file, 0, SEEK_END);
+    lseek(file, 0, SEEK_SET);
+
+    // 파일 크기를 먼저 서버에 전송
+    send(sock, &file_size, sizeof(file_size), 0);
+
+    // 파일 내용을 읽고 전송
+    char buffer[BUF_SIZE];
+    ssize_t bytes_read;
+
+    while ((bytes_read = read(file, buffer, sizeof(buffer))) > 0) {
+        send(sock, buffer, bytes_read, 0);
+    }
+
+    close(file);
+}
+
+// 파일을 선택하는 함수
 void select_file(GtkButton *button, Widgets *w) {
     GtkWidget *dialog;
     GtkFileChooser *chooser;
     GtkResponseType result;
     
-    // Create file chooser dialog
+    // 파일 선택 다이얼로그 생성
     dialog = gtk_file_chooser_dialog_new("Open File", GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(button))),
                                          GTK_FILE_CHOOSER_ACTION_OPEN,
                                          "_Cancel", GTK_RESPONSE_CANCEL,
@@ -49,17 +76,20 @@ void select_file(GtkButton *button, Widgets *w) {
     result = gtk_dialog_run(GTK_DIALOG(dialog));
 
     if (result == GTK_RESPONSE_ACCEPT) {
-        // Get the selected file's path
+        // 선택한 파일의 경로 가져오기
         chooser = GTK_FILE_CHOOSER(dialog);
         char *filename = gtk_file_chooser_get_filename(chooser);
 
-        // Do something with the filename (for example, display it in the textview)
+        // 파일 선택 경로를 텍스트뷰에 표시
         GtkTextBuffer *buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(w->textview));
         GtkTextIter iter;
         gtk_text_buffer_get_end_iter(buffer, &iter);
         gtk_text_buffer_insert(buffer, &iter, "File selected: ", -1);
         gtk_text_buffer_insert(buffer, &iter, filename, -1);
         gtk_text_buffer_insert(buffer, &iter, "\n", -1);
+
+        // 서버에 파일 전송
+        send_file(filename, w->sock);
 
         g_free(filename);
     }
