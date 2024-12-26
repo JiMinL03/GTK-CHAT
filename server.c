@@ -4,8 +4,10 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <fcntl.h>
 
 #define PORT 3334
+#define BUF_SIZE 1024
 #define MAX_CLIENTS 10
 
 typedef struct {
@@ -17,24 +19,54 @@ Client clients[MAX_CLIENTS];
 int client_count = 0;
 pthread_mutex_t client_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-void broadcast_message(const char *message) {
+void broadcast_message(const char *message, int exclude_sock) {
     pthread_mutex_lock(&client_mutex);
     for (int i = 0; i < client_count; i++) {
-        send(clients[i].sock, message, strlen(message), 0);
+        if (clients[i].sock != exclude_sock) {
+            send(clients[i].sock, message, strlen(message), 0);
+        }
     }
     pthread_mutex_unlock(&client_mutex);
 }
 
+void handle_file_transfer(int client_sock) {
+    char filename[BUF_SIZE];
+    char buffer[BUF_SIZE];
+    int bytes_received;
+
+    // 파일 이름 수신
+    bytes_received = recv(client_sock, filename, sizeof(filename), 0);
+    if (bytes_received <= 0) return;
+
+    filename[bytes_received] = '\0';
+    printf("파일 이름 수신: %s\n", filename);
+
+    // 파일 데이터 수신
+    while ((bytes_received = recv(client_sock, buffer, sizeof(buffer), 0)) > 0) {
+        broadcast_message("[FILE_TRANSFER]", client_sock);
+        send(client_sock, filename, strlen(filename) + 1, 0);
+        send(client_sock, buffer, bytes_received, 0);
+    }
+
+    printf("파일 전송 완료: %s\n", filename);
+}
+
 void *handle_client(void *arg) {
     int client_sock = *(int *)arg;
-    char buffer[1024];
+    char buffer[BUF_SIZE];
+
     while (1) {
         int len = recv(client_sock, buffer, sizeof(buffer), 0);
         if (len <= 0) break;
 
         buffer[len] = '\0';
-        printf("Received: %s\n", buffer);
-        broadcast_message(buffer);
+
+        if (strcmp(buffer, "[FILE_TRANSFER]") == 0) {
+            handle_file_transfer(client_sock);
+        } else {
+            printf("Message received: %s\n", buffer);
+            broadcast_message(buffer, client_sock);
+        }
     }
 
     pthread_mutex_lock(&client_mutex);
@@ -91,6 +123,7 @@ int main() {
             pthread_mutex_unlock(&client_mutex);
             continue;
         }
+
         clients[client_count].sock = client_sock;
         clients[client_count].addr = client_addr;
         client_count++;
@@ -99,6 +132,7 @@ int main() {
         pthread_t tid;
         pthread_create(&tid, NULL, handle_client, &client_sock);
         pthread_detach(tid);
+
         printf("Client connected.\n");
     }
 
